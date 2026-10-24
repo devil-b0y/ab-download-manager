@@ -1,0 +1,42 @@
+# Maintainer: Akshat Singh Baghel <akshatbaghel99@gmail.com>
+# Arch Linux package for AB Download Manager (Devil Boy edition).
+# Repackages the prebuilt Linux app image (bundled JBR) published on GitHub Releases.
+# The CI workflow (.github/workflows/arch-linux.yml) rewrites _tag before building.
+
+pkgname=abdownloadmanager-devilboy
+_appname=ABDownloadManager
+_tag=1.11.2-devilboy.1
+pkgver=${_tag//-/_}
+pkgrel=1
+pkgdesc="Download manager that speeds up your downloads (Devil Boy edition with multi-link download management)"
+arch=('x86_64')
+url="https://github.com/devil-b0y/ab-download-manager"
+license=('Apache-2.0')
+depends=('glibc' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'fontconfig' 'freetype2' 'hicolor-icon-theme')
+optdepends=('xorg-xwayland: required on Wayland compositors such as Hyprland'
+            'libappindicator-gtk3: system tray icon support')
+provides=('abdownloadmanager')
+conflicts=('abdownloadmanager' 'abdownloadmanager-bin')
+options=('!strip' '!debug')
+_tarball="${_appname}_${_tag}_linux_x64.tar.gz"
+source=("${_tarball}::${url}/releases/download/${_tag}/${_tarball}"
+        'abdownloadmanager.sh'
+        'abdownloadmanager.desktop')
+noextract=("${_tarball}")
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP')
+
+prepare() {
+  mkdir -p "${srcdir}/app"
+  bsdtar -xf "${srcdir}/${_tarball}" -C "${srcdir}/app"
+}
+
+package() {
+  install -d "${pkgdir}/opt/abdownloadmanager"
+  cp -a "${srcdir}/app/${_appname}/." "${pkgdir}/opt/abdownloadmanager/"
+
+  install -Dm755 "${srcdir}/abdownloadmanager.sh" "${pkgdir}/usr/bin/abdownloadmanager"
+  install -Dm644 "${srcdir}/abdownloadmanager.desktop" "${pkgdir}/usr/share/applications/com.abdownloadmanager.desktop"
+  install -Dm644 "${srcdir}/app/${_appname}/lib/${_appname}.png" "${pkgdir}/usr/share/pixmaps/abdownloadmanager.png"
+}

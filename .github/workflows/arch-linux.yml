@@ -1,0 +1,91 @@
+name: Arch Linux package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach the Arch package to"
+        required: true
+        default: "1.11.2-devilboy.1"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      SKIP_ANDROID_BUILD: "true"
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          # the app version is derived from git tags
+          fetch-depth: 0
+
+      - name: Set up JBR
+        uses: actions/setup-java@v4
+        with:
+          distribution: "jetbrains"
+          java-package: "jdk"
+          java-version: "25"
+          check-latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux app image
+        shell: bash
+        run: |
+          ./gradlew createReleaseFolderForCi
+          ./gradlew -stop
+
+      - name: Upload Linux tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: build/ci-release/binaries/*.tar.gz
+
+  package-arch:
+    runs-on: ubuntu-latest
+    needs: [ "build-linux" ]
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Checkout packaging files
+        uses: actions/checkout@v4
+
+      - name: Download Linux tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x64
+          path: dist
+
+      - name: Build pacman package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="ABDownloadManager_${TAG}_linux_x64.tar.gz"
+          src=$(ls dist/*.tar.gz | head -n1)
+          mkdir -p /tmp/pkg out
+          cp packaging/arch/* /tmp/pkg/
+          cp "$src" "/tmp/pkg/$tarball"
+          cp "$src" "out/$tarball"
+          sed -i "s/^_tag=.*/_tag=${TAG}/" /tmp/pkg/PKGBUILD
+          useradd -m builder
+          chown -R builder /tmp/pkg
+          # runtime deps are not needed to build a repackaged binary
+          su builder -c "cd /tmp/pkg && makepkg --force --nodeps --noconfirm"
+          cp /tmp/pkg/*.pkg.tar.zst out/
+          cp /tmp/pkg/PKGBUILD out/PKGBUILD
+          cd out
+          for f in *.tar.gz *.pkg.tar.zst; do sha256sum "$f" > "$f.sha256"; done
+          ls -la
+
+      - name: Attach to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            out/*
